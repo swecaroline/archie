@@ -11,7 +11,7 @@ import psycopg2
 from psycopg2 import OperationalError
 import asyncio
 from psycopg2 import sql
-
+from discord import app_commands
 
 DEBUG = os.getenv('DEBUG')
 
@@ -21,17 +21,21 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 
 activity = discord.Game(name="a!help | v.2.4.1")
 intents = discord.Intents.default()
-intents.messages = True
+#intents.messages = True
 
 bot = commands.Bot(command_prefix='a!', activity=activity, intents=intents)
 
+client = discord.Client(intents=intents)
+tree = discord.app_commands.CommandTree(client)
+
 connection = psycopg2.connect(os.getenv('DATABASE_URL'), sslmode='require')
 
-bot.remove_command("help")
+# bot.remove_command("help")
 
 # Return category object from string name
 def getCategory(name, ctx):
-    for category in ctx.message.guild.categories:
+    print("Getting category")
+    for category in ctx.guild.categories:
             if(category.name.lower() == name.lower()):
                 return category
     return None
@@ -260,9 +264,28 @@ async def clearSimple(ctx, message_count=2):
 
 ########## BOT FUNCTIONS ##########
 
+"""
+# sync the slash command to your server
+@client.event
+async def on_ready():
+
+    # Run this in all of the servers Archie is active in
+    activeservers = client.guilds
+    for guild in activeservers:
+
+        id = guild.id
+        await tree.sync(guild=discord.Object(id=id))
+        print("synced slash command")
+"""
+
 @bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
+
+    try:
+        await bot.tree.sync()
+    except Exception as e:
+        print(f"Failed to sync: {e}")
 
     create_servers_table = """
     CREATE TABLE IF NOT EXISTS servers (
@@ -275,13 +298,15 @@ async def on_ready():
     )
     """
 
+    """
     execute_query(connection, create_servers_table)
 
     if (not DEBUG or DEBUG == '0'):
         await autoArchive()
         print("Autoarchive done")
+    """
 
-@bot.command()
+@bot.tree.command()
 async def help(ctx):
 
     descrip = "Hi there! :wave: I'm Archie, a Discord bot that archives inactive channels.\n\n" + \
@@ -301,7 +326,7 @@ async def help(ctx):
         "You can restore an archived channel simply by sending a message in it.\n\n" + \
         "For more information, visit Archie on Top.gg: https://top.gg/bot/857027766976118806\n\n", inline=False)
 
-    await ctx.message.channel.send(embed=embed)
+    await ctx.response.send_message(embed=embed)
 
 async def getCatList(ctx, exclude_frozen):
 
@@ -390,35 +415,36 @@ async def inputCatList(ctx, exclude_frozen=False):
         return None
     
 
-@bot.command()
+@bot.tree.command()
 @has_permissions(manage_guild=True)
-async def config(ctx, *args):
+async def config(ctx, cat_name: str, timeout: int):
+    print("Received command")
 
-    if(len(args) == 0):
+    """
         # Get archive category name
-        delete_until = await ctx.message.channel.send("What is the name of your archive category? (NOT case sensitive)")
+        delete_until = await ctx.send("What is the name of your archive category? (NOT case sensitive)")
         try:
             cat_name = (await bot.wait_for("message", check=isMessage, timeout=20.0)).content
 
             # Get timeout time
-            await ctx.message.channel.send("After how many days should channels be archived? (Must be a full number)")
+            await ctx.send("After how many days should channels be archived? (Must be a full number)")
             timeout = (await bot.wait_for("message", check=isNumMessage, timeout=20.0)).content
             
-            id = ctx.message.guild.id
+            id = ctx.guild.id
             if getCategory(cat_name, ctx) == None: # If the archive category does not yet exist, create it
-                await ctx.message.channel.send("Category **" + cat_name.upper() + "** created.")
-                category = await ctx.message.guild.create_category(cat_name)
+                await ctx.send("Category **" + cat_name.upper() + "** created.")
+                category = await ctx.guild.create_category(cat_name)
 
             # Save information to archives.txt
             # writeArchive(id, cat_name, timeout)
 
             addServer(id, cat_name, timeout)
             
-            await ctx.message.channel.send("Category **" + cat_name.upper() + "** set as server archive. Channels inactive for **" + timeout + "** days will be moved to **" + cat_name.upper() + "**.")
+            await ctx.send("Category **" + cat_name.upper() + "** set as server archive. Channels inactive for **" + timeout + "** days will be moved to **" + cat_name.upper() + "**.")
             await updateDeleteTime(ctx)
 
         except asyncio.TimeoutError:
-            await ctx.message.channel.send("Sorry, you took too long!")
+            await ctx.send("Sorry, you took too long!")
             return None
 
         except Exception as e:
@@ -427,11 +453,11 @@ async def config(ctx, *args):
     elif(len(args) == 1):
 
         arg = args[0]
-        id = ctx.message.guild.id
+        id = ctx.guild.id
 
         if(arg.isnumeric()):
             if(readServer(id) == None):
-                await ctx.message.channel.send("Please set an archive category before setting a timeout.")
+                await ctx.send("Please set an archive category before setting a timeout.")
                 await clearSimple(ctx)
             else:
                 arg = int(arg)
@@ -443,28 +469,24 @@ async def config(ctx, *args):
             await setArchive(ctx, arg)
 
     elif(len(args) == 2):
+    """
 
-        cat_name = args[0]
-        timeout = args[1]
-
-        if(not timeout.isnumeric()):
-            await ctx.message.channel.send("Your second argument must be a number.")
-            await clearSimple(ctx)
-        else:
-            timeout = str(int(timeout))
-            id = ctx.message.guild.id
-            if getCategory(cat_name, ctx) == None: # If the archive category does not yet exist, create it
-                await ctx.message.channel.send("Category **" + cat_name.upper() + "** created.")
-                category = await ctx.message.guild.create_category(cat_name)
-            try:
-                addServer(id, cat_name, timeout)
-                await ctx.message.channel.send("Category **" + cat_name.upper() + "** set as server archive. Channels inactive for **" + timeout + "** days will be moved to **" + cat_name.upper() + "**.")
-                await updateDeleteTime(ctx)
-            except Exception as e:
-                print(e)
-    else:
-        await ctx.message.channel.send("a!config takes either 0 arguments or 2. Example: `a!config archive 30` sets ARCHIVE as the archive category and 30 as the timeout in days. If you are unsure, `a!config` will walk you through the setup.")
-        await clearSimple(ctx)
+    # timeout = str(int(timeout))
+    print(ctx.guild)
+    print(ctx.guild.id)
+    id = ctx.guild.id
+    if getCategory(cat_name, ctx) == None: # If the archive category does not yet exist, create it
+        print("Category created")
+        await ctx.send("Category **" + cat_name.upper() + "** created.")
+        category = await ctx.guild.create_category(cat_name)
+    try:
+        addServer(id, cat_name, timeout)
+        await ctx.send("Category **" + cat_name.upper() + "** set as server archive. Channels inactive for **" + timeout + "** days will be moved to **" + cat_name.upper() + "**.")
+        await updateDeleteTime(ctx)
+    except Exception as e:
+        print("Something went wrong")
+        await ctx.send("Something went wrong")
+        print(e)
 
 async def updateDeleteTime(ctx):
     id = ctx.message.guild.id
@@ -488,7 +510,7 @@ async def setTimeout(ctx, timeout):
     updateServer(id, timeout=timeout)
     await ctx.message.channel.send(f"Channels inactive for **{timeout}** days will be archived.")
 
-# @bot.command()
+@bot.tree.command()
 @has_permissions(manage_guild=True)
 async def pin(ctx):
     bot_member = ctx.message.guild.get_member(bot.user.id)
@@ -500,7 +522,8 @@ async def pin(ctx):
     permissions = ctx.message.channel.overwrites_for(bot_role)
     permissions.manage_channels=False
     await ctx.channel.set_permissions(bot.user, overwrite=permissions)
-    await ctx.message.channel.send("This channel can no longer be automatically archived.")
+    # await ctx.message.channel.send("This channel can no longer be automatically archived.")
+    await ctx.response.send_message("This channel will no longer be auto-archived.")
 
 @bot.command()
 @has_permissions(manage_channels=True)
