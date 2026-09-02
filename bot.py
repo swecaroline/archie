@@ -3,312 +3,50 @@
 import os
 import discord
 from dotenv import load_dotenv
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord.ext.commands import has_permissions, MissingPermissions
-import time
-from datetime import datetime, timezone
-import psycopg2
-from psycopg2 import OperationalError
-import asyncio
-from psycopg2 import sql
-from discord import app_commands
-
-DEBUG = os.getenv('DEBUG')
+from db import refresh_connection, upsertServerConfig, readServerValues, updateServer
+from ui import CategorySelectView
+from utils import getCategory, getLogChannel, getTimeSince, daysSinceActive, checkTimedOut
 
 load_dotenv()
+DEBUG = os.getenv('DEBUG')
 TOKEN = os.getenv('DISCORD_TOKEN')
-# DATABASE_URL = os.getenv('DATABASE_URL')
+OWNER_ID = os.getenv('OWNER_ID')
 
 activity = discord.Game(name="a!help | v.2.4.1")
 intents = discord.Intents.default()
-#intents.messages = True
+intents.messages = True
 
 bot = commands.Bot(command_prefix='a!', activity=activity, intents=intents)
 
 client = discord.Client(intents=intents)
 tree = discord.app_commands.CommandTree(client)
 
-connection = psycopg2.connect(os.getenv('DATABASE_URL'), sslmode='require')
-
-# bot.remove_command("help")
-
-# Return category object from string name
-def getCategory(name, ctx):
-    print("Getting category")
-    for category in ctx.guild.categories:
-            if(category.name.lower() == name.lower()):
-                return category
-    return None
-
-async def getLogChannel(id):
-    guild = bot.get_guild(id)
-    for channel in guild.channels:
-        if(channel.name == "archie-logs"):
-                return channel
-    channel = await guild.create_text_channel('archie-logs')
-    return channel
-
-def isMessage(message):
-    return message.author != bot.user
-
-def isNumMessage(message):
-    return isMessage(message) and message.content.isnumeric()
-
-def getTimeSince(message):
-
-    id = message.guild.id
-    timestamp = message.created_at
-
-    # Get current time
-    now = datetime.now(timezone.utc)
-    now = now.replace(tzinfo=None)
-
-    # Get time difference and convert to seconds
-    time_since = now - timestamp
-    time_since = time_since.total_seconds()
-
-    return time_since
-
-async def daysSinceActive(channel):
-
-    # Get last message
-    if channel.last_message_id == None: # If there are no messages in channel
-        return 0
-
-    message = await channel.fetch_message(channel.last_message_id)
-    
-    time_since = int((getTimeSince(message) / (60 * 60 * 24)))
-
-    return time_since
-
-# Get time since last message
-async def checkTimedOut(channel, timeout):
-
-    days_since = await daysSinceActive(channel)
-
-    if timeout == None:
-        return False 
-
-    return days_since > timeout
-
-def execute_query(connection, query):
-    connection.autocommit = True
-    cursor = connection.cursor()
-    try:
-        cursor.execute(query)
-        print("Query executed successfully")
-    except OperationalError as e:
-        print(f"The error '{e}' occurred")
-
-def execute_read_query(connection, query):
-    cursor = connection.cursor()
-    result = None
-    try:
-        cursor.execute(query)
-        result = cursor.fetchall()
-        return result
-    except OperationalError as e:
-        print(f"The error '{e}' occurred")
-
-def addServer(id, category, timeout):
-
-    if timeout:
-        server = [id, category, timeout]
-        insert_query = "INSERT INTO servers (id, archive, timeout) VALUES (%s, %s, %s)"
-    else:
-        server = [id, category]
-        insert_query = "INSERT INTO servers (id, archive, timeout) VALUES (%s, %s, NULL)"
-
-    print(insert_query)
-
-    global connection
-    connection = psycopg2.connect(os.getenv('DATABASE_URL'), sslmode='require')
-    connection.autocommit = True
-    cursor = connection.cursor()
-    try:
-        cursor.execute(insert_query, server)
-    except Exception as e:
-        print(f"The error '{e}' occurred")
-        updateServer(id, archive=category, timeout=timeout)
-
-def readServer(id):
-
-    select_server = (f"SELECT * FROM servers WHERE id={id}")
-
-    global connection
-    connection = psycopg2.connect(os.getenv('DATABASE_URL'), sslmode='require')
-    server = execute_read_query(connection, select_server)
-
-    if(len(server) > 0):
-        return server[0]       # Returns a tuple where server[0] = id, server[1] = archive channel, server[2] = timeout, 
-                                # server[3] = permanent categories, server[4] = permanent channels (not yet used), server[5] = deletion time
-    else:
-        return None
-
-def updateServer(id, **kwargs):
-
-    update_server = "UPDATE servers\nSET "
-    count = 0
-
-    global connection
-    connection = psycopg2.connect(os.getenv('DATABASE_URL'), sslmode='require')
-
-    new_values = []
-    
-    for key in kwargs:
-    
-        if(key == "archive"):
-            update_server += "archive = %s"
-        elif(key=="timeout"):
-            if(kwargs.get(key) != 'NULL'):
-                update_server += "timeout = %s"
-            else:
-                update_server += "timeout = NULL"
-        elif(key=="permanent_categories"):
-            if(kwargs.get(key) != 'NULL'):
-                update_server += "permanent_categories = %s"
-            else:
-                update_server += "permanent_categories = NULL"
-        elif(key=="delete_time"):
-            if(kwargs.get(key) != 'NULL'):
-                update_server += "delete_time = %s"
-            else:
-                update_server += "delete_time = NULL"
-
-        new_values.append(kwargs.get(key))
-
-        count += 1
-        if(count == len(kwargs)):
-            update_server += "\n"
-        else:
-            update_server += ",\n"
-
-    update_server += f"WHERE id = {id}"
-
-    connection.autocommit = True
-    cursor = connection.cursor()
-    try:
-        cursor.execute(update_server, new_values)
-        print("Query executed successfully")
-    except OperationalError as e:
-        print(f"The error '{e}' occurred")
-
-async def clearMessages(ctx, delete_from, delete_until):
-
-    # First check that the bot has the right permissions
-    bot_member = ctx.guild.get_member(bot.user.id)
-    if (bot_member.guild_permissions.manage_messages):
-
-        print("Starting clear")
-        if (delete_from == None):
-            history = await ctx.message.channel.history(limit=1).flatten()
-            if(len(history) > 0):
-                delete_from = history[0]
-
-        # Wait 3 seconds before starting to delete
-        await asyncio.sleep(3)
-        start_found = False
-        previous_message = -1
-        messages_to_skip = 0
-        
-        while (previous_message != None and previous_message != delete_until):
-            history = await ctx.message.channel.history(limit=(1 + messages_to_skip)).flatten()
-            if(len(history) > 0):
-                previous_message = history[-1]
-                if (not start_found and previous_message == delete_from):
-                    start_found = True
-                elif (not start_found):
-                    messages_to_skip += 1
-                if(getTimeSince(previous_message) > getTimeSince(delete_until)):
-                    previous_message = None
-                else:
-                    if (start_found): # Do nothing until you've reached delete_from
-                        await previous_message.delete()
-            else:
-                previous_message = None
-
-    else:
-        descrip = "Archie is now able to clear messages from certain interactions (including bot command errors, archiving, and " + \
-            "restoring) to reduce clutter. However, you must kick and re-invite Archie with the 'Manage Messages' permission to " + \
-            " access this feature.\n\n" + \
-            "Please find the updated invite link on Top.gg (https://top.gg/bot/857027766976118806). You will **not** have to " + \
-            "re-configure Archie after re-inviting him."
-        embed = discord.Embed(title="BOT UPDATE  :rocket:", description=descrip, color=0xff4912)
-        await ctx.message.channel.send(embed=embed)
-
-
-async def clearSimple(ctx, message_count=2):
-
-    # First check that the bot has the right permissions
-    bot_member = ctx.guild.get_member(bot.user.id)
-
-    if (bot_member.guild_permissions.manage_messages):
-
-        print("Has permissions")
-
-        history = await ctx.message.channel.history(limit=message_count).flatten()
-        await asyncio.sleep(3)
-        for message in history:
-            await message.delete()
-
-    else:
-
-        descrip = "Archie is now able to clear messages from certain interactions (including bot command errors, archiving, and " + \
-            "restoring) to reduce clutter. However, you must kick and re-invite Archie with the 'Manage Messages' permission to " + \
-            " access this feature.\n\n" + \
-            "Please find the updated invite link on Top.gg (https://top.gg/bot/857027766976118806). You will **not** have to " + \
-            "re-configure Archie after re-inviting him."
-        embed = discord.Embed(title="BOT UPDATE  :rocket:", description=descrip, color=0xff4912)
-        await ctx.message.channel.send(embed=embed)
-    
-
 ########## BOT FUNCTIONS ##########
 
-"""
 # sync the slash command to your server
 @client.event
 async def on_ready():
 
     # Run this in all of the servers Archie is active in
     activeservers = client.guilds
+    """
     for guild in activeservers:
+        print("Syncing slash commands for server" + str(guild.id))
 
         id = guild.id
         await tree.sync(guild=discord.Object(id=id))
         print("synced slash command")
-"""
 
-@bot.event
-async def on_ready():
-    print(f'{bot.user} has connected to Discord!')
-
-    try:
-        await bot.tree.sync()
-    except Exception as e:
-        print(f"Failed to sync: {e}")
-
-    create_servers_table = """
-    CREATE TABLE IF NOT EXISTS servers (
-    id BIGINT PRIMARY KEY,
-    archive TEXT NOT NULL, 
-    timeout INTEGER,
-    permanent_categories TEXT,
-    permanent_channels TEXT,
-    delete_time INTEGER
-    )
-    """
-
-    """
-    execute_query(connection, create_servers_table)
-
-    if (not DEBUG or DEBUG == '0'):
+    if (not DEBUG or DEBUG == 0):
         await autoArchive()
         print("Autoarchive done")
     """
 
 @bot.tree.command()
-async def help(ctx):
-
+async def help(interaction: discord.Interaction):
+    await bot.tree.sync()
     descrip = "Hi there! :wave: I'm Archie, a Discord bot that archives inactive channels.\n\n" + \
         "After you set me up, I will check on your server every day and archive channels that haven't been active for a while.\n\n" + \
         "All of this is automatic, so you don't have to worry about calling on me too often, but here are some commands you can use yourself.\n\n" + \
@@ -326,17 +64,14 @@ async def help(ctx):
         "You can restore an archived channel simply by sending a message in it.\n\n" + \
         "For more information, visit Archie on Top.gg: https://top.gg/bot/857027766976118806\n\n", inline=False)
 
-    await ctx.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
-async def getCatList(ctx, exclude_frozen):
-
-    id = ctx.message.guild.id
-
+async def getCatList(interaction: discord.Interaction, exclude_frozen: bool):
+    id = interaction.guild.id
     catList = []
-    catDisplay = []
     count = 1
-    server = readServer(id)
-    archive = server[1]
+    server = readServerValues(id)
+    archive = server.archiveCategoryName
     if(exclude_frozen):
         frozen = server[3]
         if(frozen == None):
@@ -345,157 +80,48 @@ async def getCatList(ctx, exclude_frozen):
             frozen = frozen.split("\n")
     else:
         frozen = []
-    for category in ctx.message.guild.categories:
+    for category in interaction.guild.categories:
         if category.name != archive and not category.name in frozen: # Exclude the archive category and frozen categories
-            catDisplay.append(f"[{count}] {category.name.upper()}")
             catList.append(category.name)
             count += 1
-    return [catList, catDisplay]
-
-async def inputCat(ctx, exclude_frozen=False):
-
-    id = ctx.message.guild.id
-
-    # Get list of all categories
-    result = await getCatList(ctx, exclude_frozen)
-    catList = result[0]
-    catDisplay = result[1]
-    
-    # Display this in an embed
-    descrip = f"Enter a number 1-{len(catList)}.\n\n" + "\n".join(catDisplay)
-    embed = discord.Embed(title="Categories", description=descrip, color=0xff4912)
-    await ctx.message.channel.send(embed=embed)
-
-    # Get input from user
-    def check(message):
-        return isNumMessage(message) and int(message.content) > 0 and int(message.content) <= len(catList)
-
-    try:
-        cat_num = int((await bot.wait_for("message", check=check, timeout=20.0)).content)
-        if cat_num:
-            return catList[cat_num - 1]
-    except asyncio.TimeoutError:
-        await ctx.message.channel.send("Sorry, you took too long!")
-        return None
-
-async def inputCatList(ctx, exclude_frozen=False):
-
-    id = ctx.message.guild.id
-
-    # Get list of all categories
-    result = await getCatList(ctx, exclude_frozen)
-    catList = result[0]
-    catDisplay = result[1]
-    
-    # Display this in an embed
-    descrip = f"Enter list of numbers 1-{len(catList)} separated by spaces, i.e., \"1 2 3\", or type \"0\" to select nothing.\n\n" + "\n".join(catDisplay)
-    embed = discord.Embed(title="Categories", description=descrip, color=0xff4912)
-    await ctx.message.channel.send(embed=embed)
-
-    # Get input from user
-    def check(message):
-        message = message.content.split()
-        for m in message:
-            if(not(m.isnumeric() and int(m) >= 0 and int(m) <= len(catList))):
-                return False
-        return True
-
-    try:
-        cats = (await bot.wait_for("message", check=check, timeout=20.0)).content
-        cats = cats.split()
-        categories = []
-        if(len(cats) == 1 and int(cats[0]) == 0):
-            return []
-        for c in cats:
-            if(int(c) != 0):
-                categories.append(catList[int(c) - 1])
-        return categories
-    except asyncio.TimeoutError:
-        await ctx.message.channel.send("Sorry, you took too long!")
-        return None
-    
+    return catList
 
 @bot.tree.command()
 @has_permissions(manage_guild=True)
-async def config(ctx, cat_name: str, timeout: int):
-    print("Received command")
-
-    """
-        # Get archive category name
-        delete_until = await ctx.send("What is the name of your archive category? (NOT case sensitive)")
-        try:
-            cat_name = (await bot.wait_for("message", check=isMessage, timeout=20.0)).content
-
-            # Get timeout time
-            await ctx.send("After how many days should channels be archived? (Must be a full number)")
-            timeout = (await bot.wait_for("message", check=isNumMessage, timeout=20.0)).content
-            
-            id = ctx.guild.id
-            if getCategory(cat_name, ctx) == None: # If the archive category does not yet exist, create it
-                await ctx.send("Category **" + cat_name.upper() + "** created.")
-                category = await ctx.guild.create_category(cat_name)
-
-            # Save information to archives.txt
-            # writeArchive(id, cat_name, timeout)
-
-            addServer(id, cat_name, timeout)
-            
-            await ctx.send("Category **" + cat_name.upper() + "** set as server archive. Channels inactive for **" + timeout + "** days will be moved to **" + cat_name.upper() + "**.")
-            await updateDeleteTime(ctx)
-
-        except asyncio.TimeoutError:
-            await ctx.send("Sorry, you took too long!")
-            return None
-
-        except Exception as e:
-            print(e)
-
-    elif(len(args) == 1):
-
-        arg = args[0]
-        id = ctx.guild.id
-
-        if(arg.isnumeric()):
-            if(readServer(id) == None):
-                await ctx.send("Please set an archive category before setting a timeout.")
-                await clearSimple(ctx)
-            else:
-                arg = int(arg)
-                await setTimeout(ctx, arg)
-                await updateDeleteTime(ctx)
-        else:
-            if(readServer(id) == None):
-                addServer(id, arg, None)
-            await setArchive(ctx, arg)
-
-    elif(len(args) == 2):
-    """
-
-    # timeout = str(int(timeout))
-    print(ctx.guild)
-    print(ctx.guild.id)
+async def config(ctx, cat_name: str, timeout: int = None):
     id = ctx.guild.id
+    responseMessage = ""
     if getCategory(cat_name, ctx) == None: # If the archive category does not yet exist, create it
         print("Category created")
-        await ctx.send("Category **" + cat_name.upper() + "** created.")
+        responseMessage += "Category **" + cat_name.upper() + "** created.\n"
         category = await ctx.guild.create_category(cat_name)
     try:
-        addServer(id, cat_name, timeout)
-        await ctx.send("Category **" + cat_name.upper() + "** set as server archive. Channels inactive for **" + timeout + "** days will be moved to **" + cat_name.upper() + "**.")
-        await updateDeleteTime(ctx)
+        upsertServerConfig(id, cat_name, timeout)
+        responseMessage += "Category **" + cat_name.upper() + "** set as server archive."
+        if (timeout != None):
+            responseMessage += "Channels inactive for **" + str(timeout) + "** days will be moved to **" + cat_name.upper() + "**."
+        responseMessage+="\n"
+        print("About to update delete time")
+        responseMessage += await updateDeleteTime(ctx)
     except Exception as e:
         print("Something went wrong")
-        await ctx.send("Something went wrong")
+        responseMessage += "Something went wrong updating your configuration."
         print(e)
 
+    await ctx.response.send_message(responseMessage)
+
 async def updateDeleteTime(ctx):
-    id = ctx.message.guild.id
-    server = readServer(id)
-    timeout = server[2]
-    delete_time = server[5]
+    id = ctx.guild.id
+    server = readServerValues(id)
+    timeout = server.timeToArchive
+    delete_time = server.timeToDeletion
+    print("DLETE TIME" + str(delete_time))
     if(delete_time and delete_time < timeout + 7):
         updateServer(id, delete_time=(timeout+7))
-        await ctx.message.channel.send(f"Deletion timeout changed from **{delete_time}** to **{timeout+7}**. Use `a!delete` to update.")
+        print("Server updated")
+        return f"Deletion timeout changed from **{delete_time}** to **{timeout+7}**. Use `a!delete` to update."
+    print("No need to update server")
+    return ""
 
 async def setArchive(ctx, cat_name):
     id = ctx.message.guild.id
@@ -511,32 +137,16 @@ async def setTimeout(ctx, timeout):
     await ctx.message.channel.send(f"Channels inactive for **{timeout}** days will be archived.")
 
 @bot.tree.command()
-@has_permissions(manage_guild=True)
-async def pin(ctx):
-    bot_member = ctx.message.guild.get_member(bot.user.id)
-    bot_role = bot_member.roles[0]
-    if(not bot_role.is_bot_managed()):
-        for role in bot_member.roles:
-            if(role.is_bot_managed()):
-                bot_role = role
-    permissions = ctx.message.channel.overwrites_for(bot_role)
-    permissions.manage_channels=False
-    await ctx.channel.set_permissions(bot.user, overwrite=permissions)
-    # await ctx.message.channel.send("This channel can no longer be automatically archived.")
-    await ctx.response.send_message("This channel will no longer be auto-archived.")
-
-@bot.command()
 @has_permissions(manage_channels=True)
 async def lock(ctx):
     id = ctx.message.guild.id
-    if(getCategory(readServer(id)[1], ctx) == ctx.message.channel.category):
+    if(getCategory(readServerValues(id).archiveCategoryName, ctx) == ctx.message.channel.category):
         await ctx.channel.set_permissions(ctx.guild.default_role, send_messages=False)
         await ctx.message.channel.send("This channel has been locked.")
     else:
         await ctx.message.channel.send("`a!lock` can only be run on archived channels.")
-        await clearSimple(ctx)
 
-@bot.command()
+@bot.tree.command()
 @has_permissions(manage_channels=True)
 async def unlock(ctx):
     overwrite = ctx.message.channel.overwrites_for(ctx.message.guild.default_role)
@@ -545,32 +155,29 @@ async def unlock(ctx):
         await ctx.message.channel.send("This channel has been unlocked.")
     else:
         await ctx.message.channel.send("This channel is already unlocked.")
-        await clearSimple(ctx)
 
-@bot.command()
+@bot.tree.command()
 @has_permissions(manage_guild=True)
 async def freeze(ctx):
 
     id = ctx.message.guild.id
-
     delete_until = await ctx.message.channel.send("List which categories to freeze.")
 
+    """
     cats = await inputCatList(ctx)
     if cats != []:
         cats = "\n".join(cats)
         updateServer(id, permanent_categories=cats)
-
-        await clearMessages(ctx, None, delete_until)
         await ctx.message.channel.send(f"The following categories will NOT be automatically modified by Archie (you may still manually archive channels in this category using `a!arch`):\n**{cats.upper()}**")
     else:
         updateServer(id, permanent_categories='NULL')
-        await clearMessages(ctx, None, delete_until)
         await ctx.message.channel.send(f"No categories were selected. All categories may now be automatically modified by Archie.")
+    """
 
-@bot.command(aliases=['stats', 'data'])
+@bot.tree.command()
 async def info(ctx):
     id = ctx.message.guild.id
-    server = readServer(id)
+    server = readServerValues(id)
 
     if(server == None):
         print("None")
@@ -586,12 +193,9 @@ async def info(ctx):
 
 
 # Manually archive a channel
-@bot.command(aliases=['arch'])
+@bot.tree.command()
 @has_permissions(manage_channels=True)
-async def archive(ctx, readonly=None):
-
-    if str(readonly).lower() == "readonly":
-        readonly = True
+async def archive(ctx, readonly: bool = None):
 
     id = ctx.message.guild.id
 
@@ -599,7 +203,6 @@ async def archive(ctx, readonly=None):
     archive = getCategory(readServer(id)[1], ctx)
     if archive == None:
         await ctx.message.channel.send("An archive category does not exist. Please use **a!config** to create one.")
-        await clearSimple(ctx)
     else:
         # Move to archive category if there is space in the archive
         if(len(archive.channels) < 50):
@@ -610,21 +213,19 @@ async def archive(ctx, readonly=None):
                 await ctx.channel.set_permissions(ctx.guild.default_role, send_messages=False)
                 await ctx.message.channel.send("This channel is now read-only.")
                 message_count = 3
-            await clearSimple(ctx, message_count)
         else:
            await ctx.message.channel.send(f"Your archive category **{archive.name.upper()}** is full. Please make space in your archive or create a new one.")
-           await clearSimple(ctx)
 
 # Report bug
-@bot.command()
+@bot.tree.command()
 async def bug(ctx):
     embed = discord.Embed(title=f"Archie Bug Report", description="Please report bugs at https://forms.gle/p9FJiYyfSGtvREXR7. Thanks!", color=0xff4912)
     await ctx.message.channel.send(embed=embed)
 
 
-@bot.command()
+@bot.tree.command()
 @has_permissions(manage_guild=True)
-async def delete(ctx, days):
+async def delete(ctx, days: int):
     id = ctx.message.guild.id
     timeout = readServer(id)[2]
     if not timeout:
@@ -637,7 +238,6 @@ async def delete(ctx, days):
         await ctx.message.channel.send("Archived channels will no longer be deleted.")
     else:
         await ctx.message.channel.send(f"Deletion time must be greater than {timeout+7}.")
-        await clearSimple(ctx)
 
 
 @config.error
@@ -649,18 +249,18 @@ async def delete(ctx, days):
 async def permissions_error(ctx, error):
     if isinstance(error, MissingPermissions):
         await ctx.message.channel.send("You don't have permission to do this!")
-        await clearSimple(ctx)
 
 # Automatically archive inactive channels after 24 hours
 # @tasks.loop(hours=24)
 async def autoArchive():
 
     # Update connection in case DATABASE_URL changed
-    global connection
-    connection = psycopg2.connect(os.getenv('DATABASE_URL'), sslmode='require')
+    # global connection
+    # connection = psycopg2.connect(os.getenv('DATABASE_URL'), sslmode='require')
+    refresh_connection()
 
     # Run this in all of the servers Archie is active in
-    activeservers = bot.guilds
+    activeservers = client.guilds
     for guild in activeservers:
 
         id = guild.id
@@ -669,7 +269,7 @@ async def autoArchive():
         server = readServer(id)
 
         if server == None:
-            addServer(id, "", None)
+            upsertServerConfig(id, "", None)
 
         archiveIsFull = False
 
@@ -678,7 +278,7 @@ async def autoArchive():
         if(guild.system_channel):
             logChannel = guild.system_channel
         else:
-            logChannel = await getLogChannel(id)
+            logChannel = await getLogChannel(client, id)
 
         if(server != None and len(server) > 1): # If that server is in the database
 
@@ -696,7 +296,7 @@ async def autoArchive():
             for channel in guild.channels:
 
                 # Check if Archie has the permissions to manage this channel
-                bot_member = guild.get_member(bot.user.id)
+                bot_member = guild.get_member(client.user.id)
                 bot_role = bot_member.roles[0]
                 if(not bot_role.is_bot_managed()):
                     for role in bot_member.roles:
@@ -735,7 +335,7 @@ async def autoArchive():
 
                                 # These two lines exist mainly to get the context
                                 lastMessage = await channel.fetch_message(channel.last_message_id)
-                                ctx = await bot.get_context(lastMessage)
+                                ctx = await tree.get_context(lastMessage)
 
                                 # Get the archive category. If there is no archive category, nothing happens.
                                 if archive == 0:
@@ -762,68 +362,65 @@ async def autoArchive():
 
 @bot.event
 async def on_message(message):
+    if message.author == bot.user:
+        print("Dipping")
+        return
 
-    # Get context and current guild
-    ctx = await bot.get_context(message)
-    id = ctx.message.guild.id
+    print("Received a message")
+    print(message)
+
+    # Get current guild
+    id = message.guild.id
 
     try: # If an archive category exists
-        archive = getCategory(readServer(id)[1], ctx)
+        server = readServerValues(id)
+        if (server == None):
+            return
 
-        history = await ctx.message.channel.history(limit=2).flatten()
-        previous_message = None
-        if(len(history) > 1):
-            previous_message = history[1]
-        # If the message is in a category and 
-        # the category name is the archive and 
-        # the message was sent by the user and
-        # the message is not a response to the bot (if the user sends a message after the bot, the message must not be a question or an embed)
-        # or, if it is a response to the bot, the question has timed out
-        # And the message is not a command
-
-        if previous_message:
-            previous_content = previous_message.content
-
-            if(len(previous_message.embeds) != 0):
-                previous_content = previous_message.embeds[0].description
+        archive = getCategory(server.archiveCategoryName, message)
+        print("READ SERVER" + str(server))
+        print("ARCHIVE" + str(archive))
+        print("CHANNEL" + str(message.channel))
+        print("CATEGORY" + str(message.channel.category))
 
         if message.channel.category != None and \
-        message.channel.category.name == archive.name and \
-        message.author != bot.user and \
-        (previous_message == None or \
-        (previous_message.author != bot.user or \
-        (previous_message.author == bot.user and not "?" in previous_content and not "enter" in previous_content.lower()) or \
-        getTimeSince(previous_message) >= 20)) and \
-        message.content[:2] != "a!":
+        (archive != None and message.channel.category.name == archive.name) and \
+        message.author != client.user:
 
-            delete_until = await message.channel.send("This channel has been archived! Which category would you like to restore it to?")
-            delete_from = None
+            print("Hello")
 
-            # Get the category we want to restore the channel to and move channel
-            cat_name = await inputCat(ctx, True)
-            if cat_name:
-                await message.channel.edit(category=getCategory(cat_name, ctx))
-                delete_from = await message.channel.send("Channel restored to **" + cat_name.upper() + "**.")
+            # Get list of all categories
+            catListResult = await getCatList(message, False)
+
+            # Map the list of categories to Discord UI SelectOptions
+            def parseCatList(category):
+                return discord.SelectOption(label=category, emoji="📁")
+            catList = map(parseCatList, catListResult)
+
+            # Define the callback function for the Discord UI component
+            async def process_categories(categories_selected, interaction):
+                cat_name = categories_selected[0]
+                await message.channel.edit(category=getCategory(cat_name, message))
+                await interaction.response.edit_message(content="Channel restored to **" + cat_name.upper() + "**.", view=None)
+
+            # Create and display the view
+            selectView = CategorySelectView(catList=catList, process_categories=process_categories)
+            await message.channel.send("This channel has been archived! Which category would you like to restore it to?", view=selectView, delete_after=60)
             
-            overwrite = message.channel.overwrites_for(message.guild.default_role)
-            if(overwrite.send_messages == False):
-                await unlock(ctx)
-            
-            if(delete_from == None):
-                history = await ctx.message.channel.history(limit=1).flatten()
-                if(len(history) > 0):
-                    delete_from = history[0]
-
-            await clearMessages(ctx, delete_from, delete_until)
-
-            return
-        
-        # await bot.process_commands(message) # Process commands
-    
-    except Exception as e: # If an archive category doesn't exist, just process possible commands
+    except Exception as e: 
+        print("Something went wrong in on_message")
+        print(e)
         pass
     
-    await bot.process_commands(message)
+@bot.tree.command()
+async def sync(interaction: discord.Interaction):
+    print("Received sync message")
+    print(interaction.user.id)
+    print(OWNER_ID)
+    if(str(interaction.user.id) == str(OWNER_ID)):
+        await bot.tree.sync()
+        await interaction.response.send_message("Commands synced successfully")
+    else:
+        await interaction.response.send_message("Who are you?")
 
-# autoArchive.start() # Start 24-hour auto-archiver
 bot.run(TOKEN)
