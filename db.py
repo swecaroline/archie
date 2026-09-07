@@ -84,6 +84,17 @@ def read_server_values(id):
     else:
         return None
 
+def get_permanent_categories(server_id):
+
+    query = (f"SELECT * FROM permanentCategories WHERE serverID={server_id}")
+    refresh_connection()
+    categories = execute_read_query(connection, query)
+
+    def get_category_ids(record):
+        return record[0]
+
+    return list(map(get_category_ids, categories))
+
 def upsert_server(id, **kwargs):
     refresh_connection()
 
@@ -123,6 +134,27 @@ def upsert_server(id, **kwargs):
         cursor.execute(query, new_values)
         connection.commit()
         print("Query executed successfully")
+    except OperationalError as e:
+        print(f"The error '{e}' occurred")
+
+def set_permanent_categories(category_ids: list[int], server_id: int):
+
+    def format_id(id: int):
+        return f"({id}, {server_id})"
+
+    query = f"""
+    DELETE FROM permanentCategories WHERE serverID={server_id};
+    INSERT INTO permanentCategories (id, serverID)
+    VALUES {",\n".join(map(format_id, category_ids))}
+    ON CONFLICT (id)
+    DO NOTHING;
+    """
+    print(query)
+    cursor = connection.cursor()
+    try:
+        cursor.execute(query)
+        connection.commit()
+        print("Permanent categories set successfully")
     except OperationalError as e:
         print(f"The error '{e}' occurred")
 

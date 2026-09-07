@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
-from db import read_server_values
+from db import get_permanent_categories, read_server_values
 import discord
 
 # Return category object from string name
-def get_category(ctx: discord.Interaction, name: str | None = None, id: int | None = None):
+def get_category(guild, name: str | None = None, id: int | None = None):
     if (name != None or id != None):
-        for category in ctx.guild.categories:
+        for category in guild.categories:
             if(category.id == id or (name != None and category.name.lower() == name.lower())):
                 return category
     return None
@@ -36,7 +36,7 @@ async def get_days_since_active(channel):
 
     # Get last message
     if channel.last_message_id == None: # If there are no messages in channel
-        return 0
+        return -1 
 
     message = await channel.fetch_message(channel.last_message_id)
     
@@ -44,7 +44,7 @@ async def get_days_since_active(channel):
         time_since = int((get_time_since(message) / (60 * 60 * 24)))
         return time_since
 
-    return 0
+    return -1 
 
 # Get time since last message
 async def check_if_timed_out(channel, timeout):
@@ -54,7 +54,7 @@ async def check_if_timed_out(channel, timeout):
     if timeout == None:
         return False 
 
-    return days_since > timeout
+    return days_since != -1 and days_since > timeout
 
 
 async def get_category_list(interaction: discord.Interaction, exclude_frozen: bool):
@@ -64,18 +64,12 @@ async def get_category_list(interaction: discord.Interaction, exclude_frozen: bo
     server = read_server_values(id)
     archive = server.archiveId
     frozen = []
-    """""
     if(exclude_frozen):
-        frozen = server[3]
-        if(frozen == None):
-            frozen = []
-        else:
-            frozen = frozen.split("\n")
+        frozen = get_permanent_categories(id)
     else:
         frozen = []
-    """
     for category in interaction.guild.categories:
-        if category.id != archive and not category.name in frozen: # Exclude the archive category and frozen categories
+        if category.id != archive and not category.id in frozen: # Exclude the archive category and frozen categories
             catList.append(category.name)
             count += 1
     return catList
