@@ -4,15 +4,11 @@ class ServerRecord():
     def __init__(
         self,
         id,
-        archiveCategoryName,
+        archiveId,
         timeToArchive,
-        permanentCategories,
-        permanentChannels,
-        timeToDeletion
+        timeToDelete
     ):
         self.id = id
-        self.archiveCategoryName = archiveCategoryName
+        self.archiveId = archiveId
         self.timeToArchive = timeToArchive
-        self.permanentCategories = permanentCategories
-        self.permanentChannels = permanentChannels
-        self.timeToDeletion = timeToDeletion
+        self.timeToDelete = timeToDelete
