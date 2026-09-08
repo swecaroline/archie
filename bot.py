@@ -11,6 +11,9 @@ from db import read_server_values, upsert_server, delete_server_record, set_perm
 from ui import CategorySelectView
 from utils import get_category, get_category_list
 from auto_archive import auto_archive
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+from webserver import run_server
 
 load_dotenv()
 DEBUG = os.getenv('DEBUG')
@@ -257,7 +260,7 @@ async def bug(interaction: discord.Interaction):
     if(str(interaction.user.id) == str(OWNER_ID)):
         await bot.tree.sync()
 
-    embed = discord.Embed(title=f"Archie Bug Report", description="Please report bugs at https://forms.gle/p9FJiYyfSGtvREXR7. Thanks!", color=0xff4912)
+    embed = discord.Embed(title=f"Archie Bug Report", description="Please report bugs at https://forms.fillout.com/t/itgw6QfirSus. Thanks!", color=0xff4912)
     await interaction.response.send_message(embed=embed)
 
 @config.error
@@ -328,6 +331,8 @@ async def on_message(message):
 @bot.event
 async def on_guild_remove(guild):
     delete_server_record(guild.id)
-    pass
 
+print("Running bot")
 bot.run(TOKEN)
+
+run_server()
