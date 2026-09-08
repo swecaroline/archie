@@ -103,20 +103,22 @@ def upsert_server(id, **kwargs):
     new_values = []
     
     for key in valid_keys:
-    
-        new_keys.append(key)
-        value = kwargs.get(key)
-        if (value == None):
-            print("Appending none")
-            new_values.append('NULL')
-        else:
-            new_values.append(value)
+
+        if (key in kwargs):
+            new_keys.append(key)
+            value = kwargs.get(key)
+            print(key)
+            print(value)
+            if (value == None or value == 0):
+                new_values.append('NULL')
+            else:
+                new_values.append(value)
 
     print("NEW VALUES" + str(new_values))
 
     def get_update_str(key):
         value = kwargs.get(key)
-        if (value == None):
+        if (value == None or value == 0):
             value = 'NULL'
         return f"{key} = {value}"
 

@@ -32,6 +32,7 @@ tree = discord.app_commands.CommandTree(client)
 @bot.event
 async def on_ready():
     print("I'm ready")
+    await bot.tree.sync()
     daily_auto_archive.start()
 
 @tasks.loop(hours=24)
@@ -68,40 +69,87 @@ async def help(interaction: discord.Interaction):
 @bot.tree.command(description="Configure Archie for your server")
 @app_commands.describe(cat_name="The name of your archive category (can be an existing category)")
 @app_commands.rename(cat_name="category_name")
-@app_commands.describe(time_to_archival="Days of inactivity before your channel is archived")
-@app_commands.describe(time_to_deletion="Days of inactivity before your channel is deleted from the archive")
+@app_commands.describe(time_to_archival="Days of inactivity before your channel is archived (enter 0 if channels should NOT be automatically archived)")
+@app_commands.describe(time_to_deletion="Days of inactivity before your channel is deleted from the archive (enter 0 if channels should NOT be automatically deleted)")
 @app_commands.checks.has_permissions(manage_guild=True)
 @app_commands.default_permissions(manage_guild=True)
-async def config(ctx, cat_name: str, time_to_archival: int = None, time_to_deletion: int = None):
-    if (time_to_archival != None and time_to_deletion != None and time_to_deletion < time_to_archival + 7):
+async def config(ctx, cat_name: str = None, time_to_archival: int = None, time_to_deletion: int = None):
+    if ((time_to_archival != None and time_to_archival < 0) or (time_to_deletion != None and time_to_deletion < 0)):
+        await ctx.response.send_message(f"**Could not apply your configuration:** Negative values not allowed.")
+        return
+
+    if (time_to_archival != None and time_to_deletion != None and time_to_deletion != 0 and time_to_deletion < time_to_archival + 7):
         await ctx.response.send_message(f"**Could not apply your configuration:** The deletion time must be at least 7 days greater than the archival time.")
+        return
 
     id = ctx.guild.id
     server = read_server_values(id)
+
+    if (server != None and server.timeToArchive != None and time_to_deletion != None and time_to_deletion != 0 and time_to_deletion < server.timeToArchive + 7):
+        await ctx.response.send_message(f"**Could not apply your configuration:** The deletion time must be at least 7 days greater than the archival time.")
+        return
+
+    if (server == None and cat_name == None):
+        await ctx.response.send_message(f"**Could not apply your configuration:** Please specify an archive channel.")
+        return
+
     responseMessage = ""
-    existing_category = get_category(guild=ctx.guild, name=cat_name)
 
-    # If the archive category does not yet exist, create it
-    if existing_category == None:
-        responseMessage += "Category **" + cat_name.upper() + "** created.\n"
-        new_category = await ctx.guild.create_category(cat_name)
-        category_id = new_category.id
+    if (cat_name == None):
+        category_id = server.archiveId
+        existing_category = get_category(guild=ctx.guild, id=category_id)
+
     else:
-        category_id = existing_category.id
+        existing_category = get_category(guild=ctx.guild, name=cat_name)
 
+        # If the archive category does not yet exist, create it
+        if existing_category == None:
+            responseMessage += "Category **" + cat_name.upper() + "** created.\n"
+            new_category = await ctx.guild.create_category(cat_name)
+            category_id = new_category.id
+        else:
+            category_id = existing_category.id
+
+    print("Category ID" + str(category_id))
 
     # If previous deletion timeout < new archive timeout, update
-    if (server.timeToDelete != None and server.timeToDelete < time_to_archival + 7):
+    if (
+        server != None and 
+        server.timeToDelete != None and 
+        time_to_archival != None and 
+        server.timeToDelete < time_to_archival + 7
+    ):
         responseMessage += f"Deletion timeout changed from **{server.timeToDelete}** to **{time_to_archival+7}**.\n"
         time_to_deletion = time_to_archival + 7
 
     try:
-        upsert_server(id, archiveId=category_id, timeToArchive=time_to_archival, timeToDelete=time_to_deletion)
-        responseMessage += "Category **" + cat_name.upper() + "** set as server archive. "
+        if (time_to_archival == None and time_to_deletion == None):
+            upsert_server(id, archiveId=category_id)
+        elif (time_to_archival != None and time_to_deletion == None):
+            upsert_server(id, archiveId=category_id, timeToArchive=time_to_archival)
+        elif (time_to_archival == None and time_to_deletion != None):
+            upsert_server(id, archiveId=category_id, timeToDelete=time_to_deletion)
+        else:
+            upsert_server(id, archiveId=category_id, timeToArchive=time_to_archival, timeToDelete=time_to_deletion)
+
+        if (cat_name != None):
+            responseMessage += "Category **" + cat_name.upper() + "** set as server archive. "
+            display_cat_name = cat_name
+        else:
+            display_cat_name = existing_category.name
+        print("Display cat name" + str(display_cat_name))
+
         if (time_to_archival != None):
-            responseMessage += "\nChannels inactive for **" + str(time_to_archival) + "** days will be moved to **" + cat_name.upper() + "**."
+            if (time_to_archival == 0):
+                responseMessage += "Channels will not be automatically archived.\n"
+            else:
+                responseMessage += "Channels inactive for **" + str(time_to_archival) + "** days will be moved to **" + display_cat_name.upper() + "**.\n"
         if (time_to_deletion != None):
-            responseMessage += "\nChannels inactive for **" + str(time_to_deletion) + "** days will be deleted."
+            if (time_to_deletion == 0):
+                responseMessage += "Channels will not be automatically deleted.\n"
+            else:
+                responseMessage += "Channels inactive for **" + str(time_to_deletion) + "** days will be deleted.\n"
+
     except Exception as e:
         print("Something went wrong")
         responseMessage += "Something went wrong updating your configuration."
@@ -205,10 +253,15 @@ async def freeze(interaction: discord.Interaction):
 async def info(interaction: discord.Interaction):
     id = interaction.guild.id
     server = read_server_values(id)
+
+    if (server == None):
+        await interaction.response.send_message("Archie is not configured on this server. Use `/config` to get started!")
+        return
+
     permanent_categories = get_permanent_categories(id)
     def append_emoji(cat_id: int):
         category = get_category(guild=interaction.guild, id=cat_id)
-        return f"📁 {category.name}"
+        return f":ice_cube: {category.name}"
 
     archiveCategoryName = get_category(guild=interaction.guild, id=server.archiveId).name
     timeToArchive = server.timeToArchive
@@ -217,14 +270,14 @@ async def info(interaction: discord.Interaction):
         timeToArchive == 'unspecified'
         archiveConfigMsg = "Specify a value to archive channels after this many days of inactivity."
     timeToDelete = server.timeToDelete
-    deleteConfigMsg = f"Channels are deleted from the archive after **{server.timeToDelete} days** of inactivity."
+    deleteConfigMsg = f"Channels are deleted from the archive after **{timeToDelete} days** of inactivity."
     if (timeToDelete == None):
         timeToDelete == 'unspecified'
         deleteConfigMsg = "Specify a value to delete channels from the archive after this many days of inactivity."
     embed = discord.Embed(title=f"Archie Configuration Information", description=f"Archie's configuration info for **{interaction.guild.name}.**", color=0xff4912)
-    embed.add_field(name="`Archive`", value=f"{archiveCategoryName}\n️:gear: *Archived channels are moved to the category **{archiveCategoryName}**.*", inline=False)
-    embed.add_field(name="`Archive Timeout`", value=f"{timeToArchive}\n️:gear: *{archiveConfigMsg}*", inline=False)
-    embed.add_field(name="`Deletion Timeout`", value=f"{timeToDelete}\n:gear: *{deleteConfigMsg}*", inline=False)
+    embed.add_field(name="`Archive`", value=f":file_folder: {archiveCategoryName}\n️:gear: *Archived channels are moved to the category **{archiveCategoryName}**.*", inline=False)
+    embed.add_field(name="`Archive Timeout`", value=f":clock1: {timeToArchive}\n️:gear: *{archiveConfigMsg}*", inline=False)
+    embed.add_field(name="`Deletion Timeout`", value=f":wastebasket: {timeToDelete}\n:gear: *{deleteConfigMsg}*", inline=False)
     embed.add_field(name="`Frozen`", value=f"{"\n".join(map(append_emoji, permanent_categories))}\n:gear: *These categories cannot be modified.*\n\nIf any value is 'None', that means you have not configured it yet.", inline=False)
     await interaction.response.send_message(embed=embed)
 
