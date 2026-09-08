@@ -13,7 +13,7 @@ from utils import get_category, get_category_list
 from auto_archive import auto_archive
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-from webserver import run_server
+from webserver import run_server, setup_hook
 
 load_dotenv()
 DEBUG = os.getenv('DEBUG')
@@ -332,7 +332,5 @@ async def on_message(message):
 async def on_guild_remove(guild):
     delete_server_record(guild.id)
 
-print("Running bot")
+bot.setup_hook = setup_hook
 bot.run(TOKEN)
-
-run_server()
