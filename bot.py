@@ -12,8 +12,7 @@ from ui import CategorySelectView
 from utils import get_category, get_category_list
 from auto_archive import auto_archive
 from http.server import HTTPServer, BaseHTTPRequestHandler
-
-from webserver import run_server, setup_hook
+from webserver import setup_hook
 
 load_dotenv()
 DEBUG = os.getenv('DEBUG')
