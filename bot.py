@@ -34,19 +34,23 @@ async def on_ready():
 
     ## Display help messages
     descrip = """
-    This latest update is essentially an overhaul of the bot, including:
+This latest update is essentially an overhaul of the bot, including:
 - Introducing slash commands
 - Migrating to use Discord UI elements and interactions
 - Changing of our hosting platform
+- **:warning: A bug was fixed by giving Archie permission to Manage Roles** - to ensure bot messages are being \
+sent properly, please go to Server Settings >> Roles >> Archie and **enable Manage Roles**, or kick and re-invite \
+Archie to the server via https://top.gg/bot/857027766976118806. Note that you will have to re-configure Archie if \
+re-invited.
 
-    If you have not already configured Archie for your server, go ahead 
-    and get started with `/config`. (And if you *have* set up Archie before, 
-    it's worth a check at `/info` to make sure your configurations are as they 
-    should be - we've had to make some behind-the-scenes database migrations 
-    that might impact your existing setup.)
+If you have not already configured Archie for your server, go ahead \
+and get started with `/config`. (And if you *have* set up Archie before, \
+it's worth a check at `/info` to make sure your configurations are as they \
+should be - we've had to make some behind-the-scenes database migrations \
+that might impact your existing setup.)
 
-    :warning: A lot has changed, so if you run into any bugs, please don't hesitate to
-    report them at https://forms.fillout.com/t/itgw6QfirSus. Thanks!
+:beetle: A lot has changed, so if you run into any bugs, please don't hesitate to \
+report them at https://forms.fillout.com/t/itgw6QfirSus. Thanks!
     """
     embed = discord.Embed(title=":rocket: Archie v.3.0.0 - What's New?", description=descrip, color=0xff4912)
 
