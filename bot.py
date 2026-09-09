@@ -52,17 +52,19 @@ async def help(interaction: discord.Interaction):
         "All of this is automatic, so you don't have to worry about calling on me too often, but here are some commands you can use yourself.\n\n" + \
         "Run **/config** to get started.\n\n"
     embed = discord.Embed(title="Archie", description=descrip, color=0xff4912)
-    embed.add_field(name="`/config`", value=":open_file_folder: Configure Archie on your server. (`a!config <CATEGORY NAME>`, `a!config <TIME (DAYS)>`, and `a!config <CATEGORY NAME> <TIME (DAYS)>` are valid.)", inline=False)
-    embed.add_field(name="`/archive`", value=":open_file_folder: Manually archive the current channel. Type 'readonly' at the end of the command to make the channel read-only, i.e. `a!archive readonly`.", inline=False)
+    embed.add_field(name="`/config`", value=":open_file_folder: Configure Archie on your server. (Parameters: `category_name`, `time_to_archival`, `time_to_deletion`, all optional except on initial setup)", inline=False)
+    embed.add_field(name="`/archive`", value=":open_file_folder: Manually archive the current channel. (Parameters: `readonly`, optional)`.", inline=False)
     embed.add_field(name="`/freeze`", value=":open_file_folder: 'Freeze' categories to prevent Archie from modifying them automatically.", inline=False)
-    embed.add_field(name="`/delete <TIME (DAYS)>`", value=":open_file_folder: Delete archived channels after they have been inactive for a set amount of time. `a!delete 0` removes the deletion timeout. Read-only channels cannot be automatically deleted.", inline=False)
-    embed.add_field(name="`/lock`", value=":open_file_folder: Make an archived channel read-only. Can be reversed with `a!unlock`.", inline=False)
+    embed.add_field(name="`/lock`", value=":open_file_folder: Make an archived channel read-only. Can be reversed with `/unlock`.", inline=False)
     embed.add_field(name="`/info`", value=":open_file_folder: Display the configurations for this server.", inline=False)
     # embed.add_field(name="/categories", value=" - List all categories in server.", inline=False)
     embed.add_field(name="`/help`", value=":open_file_folder: Display the help menu.\n\n", inline=False)
     embed.add_field(name="`/bug`", value=":warning: Report bugs at https://forms.gle/p9FJiYyfSGtvREXR7.\n\n" + \
         "You can restore an archived channel simply by sending a message in it.\n\n" + \
         "For more information, visit Archie on Top.gg: https://top.gg/bot/857027766976118806\n\n", inline=False)
+    embed.add_field(name="\n\nNot receiving messages from Archie?", 
+                    value=":octagonal_sign: If Archie is NOT correctly notifying you of channels that are about to be deleted, you may have to kick and re-invite Archie using the link above.\n\n",
+                    inline=False)
 
     await interaction.response.send_message(embed=embed)
 
