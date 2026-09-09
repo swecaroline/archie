@@ -8,108 +8,109 @@
 - Added `on_guild_remove` event
 - General code cleanup and bug fixes
 
---
 
 # Changelog Archive
 
+(2022 and earlier)
+
 1.0.0: 
-    - First deployed version
+- First deployed version
 
 1.0.1: 
-    - Changed help function to a!help
-    - Displayed help function in game activity
-    - Scheduled auto-archiving to run every 12 hours, not 24
+- Changed help function to a!help
+- Displayed help function in game activity
+- Scheduled auto-archiving to run every 12 hours, not 24
 
 2.0.0:
-    - SWITCHED TO USING POSTGRESQL TO STORE SERVER DATA
-    - Required manage_server permissions for a!config and a!archive
-    - Added command "a!arch" (shortened "archive")
-    - Added new set commands ("a!set", "a!timeout")
-    - Added "a!limit" to prevent auto-archiving in designated channels
-    - Updated help menu
+- SWITCHED TO USING POSTGRESQL TO STORE SERVER DATA
+- Required manage_server permissions for a!config and a!archive
+- Added command "a!arch" (shortened "archive")
+- Added new set commands ("a!set", "a!timeout")
+- Added "a!limit" to prevent auto-archiving in designated channels
+- Updated help menu
 
 2.0.1:
-    - Bug fix: autoArchive() crashes if server is not in database
+- Bug fix: autoArchive() crashes if server is not in database
 
 2.0.2:
-    - Bug fix: send a message if the server archive is full (>50 channels)
+- Bug fix: send a message if the server archive is full (>50 channels)
 
 2.1.0:
-    - Add a!deleteafter to delete channels from archive after prolonged inactivity
-    - Bug fix: if archive channel is full, Archie only sends this to system messages once
+- Add a!deleteafter to delete channels from archive after prolonged inactivity
+- Bug fix: if archive channel is full, Archie only sends this to system messages once
 
 2.1.1:
-    - Optimized database connection for faster autoArchive process
-    - Minor message corrections (i.e. capitalization)
-    - Create log channel if no system messages channel
+- Optimized database connection for faster autoArchive process
+- Minor message corrections (i.e. capitalization)
+- Create log channel if no system messages channel
 
 2.1.2:
-    - Bug fix: Update connection throughout program in case DATABASE_URL changes
+- Bug fix: Update connection throughout program in case DATABASE_URL changes
 
 2.1.3:
-    - Add timeout messages
-    - Capitalize category names in getCatList()
+- Add timeout messages
+- Capitalize category names in getCatList()
 
 2.1.4:
-    - Update deletion warning to report number of days until deletion
-    - Remove unnecessary task loop
+- Update deletion warning to report number of days until deletion
+- Remove unnecessary task loop
 
 2.1.5:
-    - Edit some countdown and grammar errors in Archie's messages
+- Edit some countdown and grammar errors in Archie's messages
 
 2.1.6:
-    - Display channel name (and not just mention) in channel deletion warning
+- Display channel name (and not just mention) in channel deletion warning
 
 2.1.7:
-    - Fix error with a!config
-    - Correct some messaging errors
+- Fix error with a!config
+- Correct some messaging errors
 
 2.2.0:
-    - Add optional arguments to a!config
-    - Use kwargs with readServer()
-    - Add lock/unlock feature for readonly channels
-    - Change limit to freeze
+- Add optional arguments to a!config
+- Use kwargs with readServer()
+- Add lock/unlock feature for readonly channels
+- Change limit to freeze
 
 2.2.1:
-    - Bug fix: categories weren't displaying when permanent_categories == 0
+- Bug fix: categories weren't displaying when permanent_categories == 0
 
 2.2.2: 
-    - Fix lag for message responsiveness immediately after archiving
+- Fix lag for message responsiveness immediately after archiving
 
 2.2.3:
-    - Update help menu with top.gg link
-    - Update lock, unlock, and arch so that anyone with manage_channels permission can use
+- Update help menu with top.gg link
+- Update lock, unlock, and arch so that anyone with manage_channels permission can use
 
 2.2.4:
-    - Improve input validation
+- Improve input validation
 
 2.2.5:
-    - Consolidate a!set and a!timeout into a!config
-    - Fix logical error with deletion timeout being less than inactivity timeout
-    - Allow users to remove deletion timeout with a!delete 0
+- Consolidate a!set and a!timeout into a!config
+- Fix logical error with deletion timeout being less than inactivity timeout
+- Allow users to remove deletion timeout with a!delete 0
 
 2.2.6:
-    - Remove permissions error message for channels that Archie cannot manage
+- Remove permissions error message for channels that Archie cannot manage
 
 2.2.7:
-    - Bug fix: fixed logical error, timed out categories in archive were not being deleted
+- Bug fix: fixed logical error, timed out categories in archive were not being deleted
 
 2.2.8:
-    - Bug fix: removed "not found" error when searching channels for message
+- Bug fix: removed "not found" error when searching channels for message
 
 2.3.0:
-    - Add feature: Archie will delete some commands and responses to clean up clutter
-    - Locked channels restored from archive are automatically unlocked
+- Add feature: Archie will delete some commands and responses to clean up clutter
+- Locked channels restored from archive are automatically unlocked
 
 2.3.1:
-    - Bug fix: send "archive full" message was not awaited during auto-archive
+- Bug fix: send "archive full" message was not awaited during auto-archive
 
 2.3.2:
-    - Add update message for servers where Archie does not have "Manage Messages" permission
+- Add update message for servers where Archie does not have "Manage Messages" permission
 
 2.4.0:
-    - Archie's database was reset by Heroku :(
-    - Get Archie back up and running again and update with Discord Intents
+- Archie's database was reset by Heroku :(
+- Get Archie back up and running again and update with Discord Intents
 
 2.4.1:
-    - Add bug report command (a!bug) and add information to help menu
+- Add bug report command (a!bug) and add information to help menu
