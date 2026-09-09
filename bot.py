@@ -37,7 +37,7 @@ async def on_ready():
 This latest update is essentially an overhaul of the bot, including:
 - Introducing slash commands
 - Migrating to use Discord UI elements and interactions
-- Changing of our hosting platform
+- Updating our hosting platform
 - **:warning: A bug was fixed by giving Archie permission to Manage Roles** - to ensure bot messages are being \
 sent properly, please go to Server Settings >> Roles >> Archie and **enable Manage Roles**, or kick and re-invite \
 Archie to the server via https://top.gg/bot/857027766976118806. Note that you will have to re-configure Archie if \
