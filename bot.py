@@ -9,7 +9,7 @@ from discord.ext.commands import MissingPermissions
 from discord import app_commands
 from db import read_server_values, upsert_server, delete_server_record, set_permanent_categories, get_permanent_categories
 from ui import CategorySelectView
-from utils import get_category, get_category_list
+from utils import get_category, get_category_list, getLogChannel
 from auto_archive import auto_archive
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from webserver import setup_hook
@@ -31,8 +31,40 @@ tree = discord.app_commands.CommandTree(client)
 
 @bot.event
 async def on_ready():
-    print("I'm ready")
-    await bot.tree.sync()
+
+    ## Display help messages
+    descrip = """
+    This latest update is essentially an overhaul of the bot, including:
+- Introducing slash commands
+- Migrating to use Discord UI elements and interactions
+- Changing of our hosting platform
+
+    If you have not already configured Archie for your server, go ahead 
+    and get started with `/config`. (And if you *have* set up Archie before, 
+    it's worth a check at `/info` to make sure your configurations are as they 
+    should be - we've had to make some behind-the-scenes database migrations 
+    that might impact your existing setup.)
+
+    :warning: A lot has changed, so if you run into any bugs, please don't hesitate to
+    report them at https://forms.fillout.com/t/itgw6QfirSus. Thanks!
+    """
+    embed = discord.Embed(title=":rocket: Archie v.3.0.0 - What's New?", description=descrip, color=0xff4912)
+
+    activeservers = bot.guilds
+    for guild in activeservers:
+        try:
+            logChannel = None
+            if(guild.system_channel):
+                logChannel = guild.system_channel
+            else:
+                logChannel = await getLogChannel(guild)
+
+            bot_member = guild.get_member(bot.user.id)
+            await logChannel.set_permissions(bot_member, send_messages=True)
+            await logChannel.send(embed=embed)
+        except Exception as e:
+            print(f"Failed to post announcement in guild {guild.id}: {e}")
+    
     daily_auto_archive.start()
 
 @tasks.loop(hours=24)
@@ -63,7 +95,7 @@ async def help(interaction: discord.Interaction):
         "You can restore an archived channel simply by sending a message in it.\n\n" + \
         "For more information, visit Archie on Top.gg: https://top.gg/bot/857027766976118806\n\n", inline=False)
     embed.add_field(name="\n\nNot receiving messages from Archie?", 
-                    value=":octagonal_sign: If Archie is NOT correctly notifying you of channels that are about to be deleted, you may have to kick and re-invite Archie using the link above.\n\n",
+                    value=":octagonal_sign: If Archie is NOT correctly notifying you of channels that are about to be deleted, you may have to edit Archie's role to include 'Mange Roles', or kick and re-invite Archie using the link above.\n\n",
                     inline=False)
 
     await interaction.response.send_message(embed=embed)
@@ -333,8 +365,6 @@ async def permissions_error(interaction: discord.Interaction, error):
 async def on_message(message):
     if message.author == bot.user:
         return
-
-    print(message)
 
     # Get current guild
     id = message.guild.id
