@@ -1,3 +1,17 @@
+# Changelog - v.3.0.0 and above
+
+## 3.0.0 (September 8, 2026)
+- Changed host from Heroku to DigitalOcean
+- Migrated to slash commands
+- Switched to interactions/Discord UI instead of message content intent
+- Migrated to new relational database
+- Added `on_guild_remove` event
+- General code cleanup and bug fixes
+
+--
+
+# Changelog Archive
+
 1.0.0: 
     - First deployed version
 
